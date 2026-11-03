@@ -1,11 +1,17 @@
 import { useState, useEffect } from 'react'
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import { autoTable } from 'jspdf-autotable';
 import logo from './assets/logo/logo.jpg'
 import './App.css'
 
-const API_URL = 'http://localhost:5000';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
+
+async function carregarCompras(signal) {
+  const response = await fetch(`${API_URL}/compras`, { signal });
+  if (!response.ok) throw new Error('Erro ao buscar dados');
+  return response.json();
+}
 
 function App() {
   const [compras, setCompras] = useState([]);
@@ -16,9 +22,7 @@ function App() {
 
   const buscarCompras = async () => {
     try {
-      const response = await fetch(`${API_URL}/compras`);
-      if (!response.ok) throw new Error('Erro ao buscar dados');
-      const dados = await response.json();
+      const dados = await carregarCompras();
       setCompras(dados);
     } catch (e) {
       setMensagem('Erro: Não foi possível conectar ao servidor.');
@@ -27,7 +31,11 @@ function App() {
   };
 
   useEffect(() => {
-    buscarCompras();
+    const controller = new AbortController();
+    carregarCompras(controller.signal).then(setCompras).catch(error => {
+      if (error.name !== 'AbortError') setMensagem('Erro: Não foi possível conectar ao servidor.');
+    });
+    return () => controller.abort();
   }, []);
 
   const handleFileChange = (e) => {
@@ -45,9 +53,9 @@ function App() {
         setMensagem('Nota enviada!');
         buscarCompras();
       } else {
-        setMensagem('Erro no servidor.');
+        setMensagem(await res.text() || 'Erro no servidor.');
       }
-    } catch (e) {
+    } catch {
       setMensagem('Erro de conexão.');
     }
   };
@@ -57,7 +65,7 @@ function App() {
     try {
       const res = await fetch(`${API_URL}/compras/${id}`, { method: 'DELETE' });
       if (res.ok) buscarCompras();
-    } catch (e) {
+    } catch {
       alert('Erro ao excluir.');
     }
   };
@@ -73,7 +81,7 @@ function App() {
         setEditandoId(null);
         buscarCompras();
       }
-    } catch (e) {
+    } catch {
       alert('Erro ao salvar.');
     }
   };
@@ -91,7 +99,7 @@ function App() {
       const total = compras.reduce((acc, curr) => acc + curr.valor_total, 0);
       linhas.push(["", "", "TOTAL:", `R$ ${total.toFixed(2)}`]);
 
-      doc.autoTable({
+      autoTable(doc, {
         head: [colunas],
         body: linhas,
         startY: 30,
@@ -126,7 +134,7 @@ function App() {
       </header>
       
       <div className="upload-section">
-        <input type="file" onChange={handleFileChange} />
+        <input type="file" accept=".xml" onChange={handleFileChange} />
         <button onClick={handleUpload}>Registrar Nota</button>
         <p>{mensagem}</p>
       </div>
